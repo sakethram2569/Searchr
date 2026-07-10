@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from tokenizer import tokenize
 from bm25 import precompute_idf, score_document
-from boolean_query import union, multi_and
+from boolean_query import union, multi_and, phrase_run_length
 from trie import Trie
 from spellcheck import spellcheck
 from snippet import generate_snippet
@@ -121,10 +121,21 @@ def search(q: str, page: int = 1, size: int = 10):
     }
 
     candidate_ids = {p["doc_id"] for p in candidates}
-    scores = {
+    bm25_scores = {
         doc_id: score_document(query_terms, doc_id, doc_lengths[doc_id], avg_dl, postings_by_term, idf)
         for doc_id in candidate_ids
     }
+
+    if len(query_terms) >= 2:
+        # Phrase-adjacency bonus: squared run length rewards longer
+        # consecutive matches more than linearly. Pure addition on top
+        # of BM25 -- never replaces it, never filters candidates.
+        scores = {
+            doc_id: bm25_scores[doc_id] + phrase_run_length(query_terms, doc_id, postings_by_term) ** 2
+            for doc_id in candidate_ids
+        }
+    else:
+        scores = bm25_scores
 
     ranked = heapq.nlargest(len(scores), scores.items(), key=lambda x: x[1])
     total = len(ranked)

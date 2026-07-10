@@ -51,3 +51,34 @@ def multi_and(posting_lists):
     for lst in posting_lists[1:]:
         result = intersect(result, lst)
     return result
+
+def phrase_run_length(query_terms, doc_id, postings_by_term):
+    """
+    Longest run of query words that appear at consecutive positions,
+    in original query order, in the given document.
+
+    query_terms: list of query words, in original query order.
+    doc_id: the document being scored.
+    postings_by_term: {term: {doc_id: posting_dict}}, posting_dict has "positions".
+
+    Returns an int. A single-word query has nothing to be adjacent to,
+    so callers should skip this for len(query_terms) < 2.
+    """
+    n = len(query_terms)
+    if n < 2:
+        return n
+
+    positions = []
+    for term in query_terms:
+        posting = postings_by_term.get(term, {}).get(doc_id)
+        positions.append(set(posting["positions"]) if posting else set())
+
+    best = 1
+    for i in range(n):
+        for p in positions[i]:
+            run, k = 1, 1
+            while i + k < n and (p + k) in positions[i + k]:
+                run += 1
+                k += 1
+            best = max(best, run)
+    return best
