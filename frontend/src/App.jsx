@@ -2,29 +2,37 @@ import { useState, useRef } from "react";
 import api from "./api";
 import "./App.css";
 
+const PAGE_SIZE = 10;
+
 function App() {
   const [query, setQuery] = useState("");
+  const [activeQuery, setActiveQuery] = useState("");
   const [results, setResults] = useState([]);
   const [meta, setMeta] = useState(null);
+  const [page, setPage] = useState(1);
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debounceRef = useRef(null);
 
-  const runSearch = async (searchQuery) => {
+  const runSearch = async (searchQuery, pageNum) => {
     if (!searchQuery.trim()) return;
-    const res = await api.get("/search", { params: { q: searchQuery } });
+    const res = await api.get("/search", {
+      params: { q: searchQuery, page: pageNum, size: PAGE_SIZE },
+    });
     setResults(res.data.results);
     setMeta({
       total: res.data.total,
       time_ms: res.data.time_ms,
       corrected_query: res.data.corrected_query,
     });
+    setPage(pageNum);
+    setActiveQuery(searchQuery);
   };
 
   const handleSearch = (e) => {
     e.preventDefault();
     setShowSuggestions(false);
-    runSearch(query);
+    runSearch(query, 1); // any new submitted search starts back at page 1
   };
 
   const handleChange = (e) => {
@@ -47,8 +55,10 @@ function App() {
   const handleSuggestionPick = (term) => {
     setQuery(term);
     setShowSuggestions(false);
-    runSearch(term);
+    runSearch(term, 1);
   };
+
+  const totalPages = meta ? Math.max(1, Math.ceil(meta.total / PAGE_SIZE)) : 1;
 
   return (
     <div className="app">
@@ -91,6 +101,20 @@ function App() {
           </li>
         ))}
       </ul>
+
+      {meta && meta.total > 0 && (
+        <div className="pagination">
+          <button disabled={page <= 1} onClick={() => runSearch(activeQuery, page - 1)}>
+            Prev
+          </button>
+          <span>
+            Page {page} of {totalPages}
+          </span>
+          <button disabled={page >= totalPages} onClick={() => runSearch(activeQuery, page + 1)}>
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }

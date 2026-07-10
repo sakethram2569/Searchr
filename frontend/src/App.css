@@ -19,3 +19,12 @@
 .suggestions li:hover { background: #333; }
 .results li { margin-bottom: 24px; list-style: none; padding: 0; }
 mark { background: #ffe08a; }
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  margin: 24px 0;
+}
+.pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
