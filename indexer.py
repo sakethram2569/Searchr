@@ -30,7 +30,7 @@ DB = dict(
 def build_index():
     conn = psycopg2.connect(**DB)
     cur = conn.cursor()
-    cur.execute("SELECT id, content FROM documents;")
+    cur.execute("SELECT id, content FROM documents ORDER BY id;")
     rows = cur.fetchall()
     cur.close()
     conn.close()
