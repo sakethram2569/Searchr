@@ -1,3 +1,21 @@
 .app { max-width: 700px; margin: 40px auto; font-family: sans-serif; }
+.search-form { display: flex; justify-content: center; gap: 8px; position: relative; }
+.input-wrap { position: relative; }
+.input-wrap input { width: 300px; }
+.suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #222;
+  border: 1px solid #444;
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  z-index: 10;
+  text-align: left;
+}
+.suggestions li { padding: 8px 12px; cursor: pointer; color: #eee; }
+.suggestions li:hover { background: #333; }
 .results li { margin-bottom: 24px; list-style: none; padding: 0; }
 mark { background: #ffe08a; }
