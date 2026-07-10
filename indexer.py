@@ -10,12 +10,12 @@ Serializes everything to index.pkl via pickle.
 import os
 import pickle
 import time
-from collections import defaultdict
+from collections import defaultdict, Counter          # <-- CHANGED: added Counter
 
 import psycopg2
 from dotenv import load_dotenv
 
-from tokenizer import tokenize
+from tokenizer import tokenize_with_surface            # <-- CHANGED: was `tokenize`
 
 load_dotenv()
 
@@ -40,15 +40,18 @@ def build_index():
     inverted_index = defaultdict(list)
     doc_lengths = {}
     term_doc_freq = defaultdict(int)
+    term_surface_counts = defaultdict(Counter)          # <-- CHANGED: new line
 
     start = time.time()
     for doc_id, content in rows:
-        tokens = tokenize(content)
+        pairs = tokenize_with_surface(content)          # <-- CHANGED: was tokenize(content)
+        tokens = [stem for _, stem in pairs]             # <-- CHANGED: new line
         doc_lengths[doc_id] = len(tokens)
 
         term_positions = defaultdict(list)
-        for pos, term in enumerate(tokens):
+        for pos, (raw, term) in enumerate(pairs):        # <-- CHANGED: unpack raw + term
             term_positions[term].append(pos)
+            term_surface_counts[term][raw] += 1           # <-- CHANGED: new line
 
         for term, positions in term_positions.items():
             tf = len(positions) / len(tokens) if tokens else 0
@@ -63,12 +66,17 @@ def build_index():
     print(f"Vocabulary size (unique terms): {len(inverted_index)}")
     print(f"Average document length: {avg_dl:.1f} tokens")
 
+    term_display_form = {                                # <-- CHANGED: new block
+        term: counts.most_common(1)[0][0] for term, counts in term_surface_counts.items()
+    }
+
     data = {
         "inverted_index": dict(inverted_index),
         "doc_lengths": doc_lengths,
         "term_doc_freq": dict(term_doc_freq),
         "total_docs": total_docs,
         "avg_dl": avg_dl,
+        "term_display_form": term_display_form,          # <-- CHANGED: new key
     }
     with open("index.pkl", "wb") as f:
         pickle.dump(data, f)

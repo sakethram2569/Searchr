@@ -1,0 +1,183 @@
+"""
+Step 9 - FastAPI search endpoints.
+Loads the pickled index once at startup, keeps it (and a small Postgres
+connection pool) in memory, and serves /search, /autocomplete, /document.
+"""
+import heapq
+import os
+import pickle
+import time
+from contextlib import asynccontextmanager
+
+import psycopg2
+from psycopg2 import pool as pg_pool
+from dotenv import load_dotenv
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from tokenizer import tokenize
+from bm25 import precompute_idf, score_document
+from boolean_query import union, multi_and
+from trie import Trie
+from spellcheck import spellcheck
+from snippet import generate_snippet
+
+load_dotenv()
+
+DB = dict(
+    host=os.getenv("DB_HOST"),
+    dbname=os.getenv("DB_NAME"),
+    user=os.getenv("DB_USER"),
+    password=os.getenv("DB_PASSWORD"),
+)
+
+state = {}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    with open("index.pkl", "rb") as f:
+        data = pickle.load(f)
+
+    state["inverted_index"] = data["inverted_index"]
+    state["doc_lengths"] = data["doc_lengths"]
+    state["total_docs"] = data["total_docs"]
+    state["avg_dl"] = data["avg_dl"]
+    state["idf"] = precompute_idf(data["term_doc_freq"], data["total_docs"])
+
+    trie = Trie()
+    term_display_form = data["term_display_form"]
+    for term, df in data["term_doc_freq"].items():
+        trie.insert(term, df, term_display_form.get(term, term))
+    state["trie"] = trie
+
+    state["db_pool"] = pg_pool.SimpleConnectionPool(1, 5, **DB)
+
+    print(f"Loaded index: {data['total_docs']} docs, {len(data['inverted_index'])} vocab terms")
+    yield
+    state["db_pool"].closeall()
+    state.clear()
+
+
+app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
+)
+
+
+def resolve_query(tokens: list[str]) -> tuple[list[str], bool]:
+    """
+    Only spell-correct a term if it doesn't already exist in the vocabulary.
+    (Running spellcheck unconditionally, even on correctly-typed common
+    words, would risk "correcting" a valid rare word into a more common
+    but different one -- bad behavior. Only fix terms genuinely absent
+    from the vocabulary.)
+    """
+    inverted_index = state["inverted_index"]
+    trie = state["trie"]
+    corrected, changed = [], False
+    for t in tokens:
+        if t in inverted_index:
+            corrected.append(t)
+        else:
+            fix = spellcheck(t, trie, max_edits=2)
+            if fix:
+                corrected.append(fix)
+                changed = True
+            else:
+                corrected.append(t)
+    return corrected, changed
+
+
+@app.get("/search")
+def search(q: str, page: int = 1, size: int = 10):
+    start_time = time.time()
+    inverted_index = state["inverted_index"]
+    doc_lengths = state["doc_lengths"]
+    avg_dl = state["avg_dl"]
+    idf = state["idf"]
+
+    raw_tokens = tokenize(q)
+    query_terms, corrected = resolve_query(raw_tokens)
+
+    postings_lists = [inverted_index[t] for t in query_terms if t in inverted_index]
+
+    if not postings_lists:
+        candidates = []
+    else:
+        and_result = multi_and(postings_lists) if len(postings_lists) > 1 else postings_lists[0]
+        if and_result:
+            candidates = and_result
+        else:
+            # AND found nothing -- fall back to OR rather than showing zero
+            # results (standard real-world search UX)
+            or_result = postings_lists[0]
+            for p in postings_lists[1:]:
+                or_result = union(or_result, p)
+            candidates = or_result
+
+    postings_by_term = {
+        t: {p["doc_id"]: p for p in inverted_index.get(t, [])} for t in query_terms
+    }
+
+    candidate_ids = {p["doc_id"] for p in candidates}
+    scores = {
+        doc_id: score_document(query_terms, doc_id, doc_lengths[doc_id], avg_dl, postings_by_term, idf)
+        for doc_id in candidate_ids
+    }
+
+    ranked = heapq.nlargest(len(scores), scores.items(), key=lambda x: x[1])
+    total = len(ranked)
+    start_idx = (page - 1) * size
+    page_slice = ranked[start_idx:start_idx + size]
+
+    conn = state["db_pool"].getconn()
+    try:
+        cur = conn.cursor()
+        results = []
+        for doc_id, score in page_slice:
+            cur.execute("SELECT title, content, url FROM documents WHERE id = %s", (doc_id,))
+            title, content, url = cur.fetchone()
+            term_positions = {
+                t: postings_by_term[t][doc_id]["positions"]
+                for t in query_terms if doc_id in postings_by_term[t]
+            }
+            snippet = generate_snippet(content, term_positions, window_chars=200)
+            results.append({
+                "id": doc_id, "title": title, "snippet": snippet,
+                "score": round(score, 3), "url": url,
+            })
+        cur.close()
+    finally:
+        state["db_pool"].putconn(conn)
+
+    elapsed_ms = (time.time() - start_time) * 1000
+    return {
+        "results": results,
+        "total": total,
+        "page": page,
+        "size": size,
+        "time_ms": round(elapsed_ms, 2),
+        "corrected_query": " ".join(query_terms) if corrected else None,
+    }
+
+
+@app.get("/autocomplete")
+def autocomplete(prefix: str, limit: int = 8):
+    suggestions = state["trie"].completions(prefix.lower(), limit=limit)
+    return {"suggestions": suggestions}
+
+
+@app.get("/document/{doc_id}")
+def get_document(doc_id: int):
+    conn = state["db_pool"].getconn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT title, content FROM documents WHERE id = %s", (doc_id,))
+        row = cur.fetchone()
+        cur.close()
+    finally:
+        state["db_pool"].putconn(conn)
+    if not row:
+        return {"error": "not found"}
+    return {"title": row[0], "content": row[1]}
