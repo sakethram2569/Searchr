@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import api from "./api";
 import "./App.css";
 
@@ -12,6 +12,8 @@ function App() {
   const [page, setPage] = useState(1);
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [docLoading, setDocLoading] = useState(false);
   const debounceRef = useRef(null);
 
   const runSearch = async (searchQuery, pageNum) => {
@@ -32,7 +34,7 @@ function App() {
   const handleSearch = (e) => {
     e.preventDefault();
     setShowSuggestions(false);
-    runSearch(query, 1); // any new submitted search starts back at page 1
+    runSearch(query, 1);
   };
 
   const handleChange = (e) => {
@@ -56,6 +58,37 @@ function App() {
     setQuery(term);
     setShowSuggestions(false);
     runSearch(term, 1);
+  };
+
+  const openDocument = async (id) => {
+    setDocLoading(true);
+    setSelectedDoc({ id, title: "", content: "" }); // open modal immediately, show loading
+    const res = await api.get(`/document/${id}`);
+    setSelectedDoc({ id, title: res.data.title, content: res.data.content });
+    setDocLoading(false);
+  };
+
+  const closeDocument = () => setSelectedDoc(null);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") closeDocument();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const highlightContent = (text) => {
+    const highlightSource = meta?.corrected_query || activeQuery;
+    if (!highlightSource) return text;
+    const words = [...new Set(highlightSource.trim().split(/\s+/))].filter(Boolean);
+    if (words.length === 0) return text;
+    const escaped = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const pattern = new RegExp(`\\b(${escaped.join("|")})\\b`, "gi");
+    const wordSet = new Set(words.map((w) => w.toLowerCase()));
+    return text.split(pattern).map((part, i) =>
+      wordSet.has(part.toLowerCase()) ? <mark key={i}>{part}</mark> : part
+    );
   };
 
   const totalPages = meta ? Math.max(1, Math.ceil(meta.total / PAGE_SIZE)) : 1;
@@ -95,7 +128,7 @@ function App() {
 
       <ul className="results">
         {results.map((r) => (
-          <li key={r.id}>
+          <li key={r.id} onClick={() => openDocument(r.id)}>
             <h3>{r.title}</h3>
             <p dangerouslySetInnerHTML={{ __html: r.snippet }} />
           </li>
@@ -113,6 +146,22 @@ function App() {
           <button disabled={page >= totalPages} onClick={() => runSearch(activeQuery, page + 1)}>
             Next
           </button>
+        </div>
+      )}
+
+      {selectedDoc && (
+        <div className="modal-overlay" onClick={closeDocument}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={closeDocument} aria-label="Close">×</button>
+            {docLoading ? (
+              <p className="modal-loading">Loading...</p>
+            ) : (
+              <>
+                <h2>{selectedDoc.title}</h2>
+                <p className="modal-content">{highlightContent(selectedDoc.content)}</p>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
