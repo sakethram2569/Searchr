@@ -14,7 +14,9 @@ function App() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [docLoading, setDocLoading] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const debounceRef = useRef(null);
+  const helpRef = useRef(null);
 
   const runSearch = async (searchQuery, pageNum) => {
     if (!searchQuery.trim()) return;
@@ -60,6 +62,12 @@ function App() {
     runSearch(term, 1);
   };
 
+  const handleExample = (exampleQuery) => {
+    setQuery(exampleQuery);
+    setShowSuggestions(false);
+    runSearch(exampleQuery, 1);
+  };
+
   const openDocument = async (id) => {
     setDocLoading(true);
     setSelectedDoc({ id, title: "", content: "" });
@@ -72,11 +80,25 @@ function App() {
 
   useEffect(() => {
     const onKeyDown = (e) => {
-      if (e.key === "Escape") closeDocument();
+      if (e.key === "Escape") {
+        closeDocument();
+        setShowHelp(false);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  useEffect(() => {
+    if (!showHelp) return;
+    const onClickOutside = (e) => {
+      if (helpRef.current && !helpRef.current.contains(e.target)) {
+        setShowHelp(false);
+      }
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [showHelp]);
 
   const totalPages = meta ? Math.max(1, Math.ceil(meta.total / PAGE_SIZE)) : 1;
 
@@ -88,9 +110,12 @@ function App() {
           <input
             value={query}
             onChange={handleChange}
-            onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+            onFocus={() => {
+              setShowHelp(false);
+              suggestions.length > 0 && setShowSuggestions(true);
+            }}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 100)}
-            placeholder="Search..."
+            placeholder="Search Reuters news articles..."
             autoComplete="off"
           />
           {showSuggestions && (
@@ -103,10 +128,62 @@ function App() {
             </ul>
           )}
         </div>
+
+        <div className="syntax-help" ref={helpRef}>
+          <button
+            type="button"
+            className="syntax-help-btn"
+            aria-label="Search syntax help"
+            aria-expanded={showHelp}
+            onClick={() => setShowHelp((v) => !v)}
+          >
+            ?
+          </button>
+          {showHelp && (
+            <div className="syntax-popover" role="dialog" aria-label="Search syntax examples">
+              <p>
+                <code>"exact phrase"</code> only matches documents containing that
+                exact wording, in order.
+              </p>
+              <p>
+                <code>-word</code> excludes documents containing that word.
+              </p>
+              <p>
+                Combine them: <code>"oil price" -government</code>
+              </p>
+            </div>
+          )}
+        </div>
+
         <button type="submit">Search</button>
       </form>
 
-      {meta && (
+      {!meta ? (
+        <div className="empty-tips">
+          <p className="empty-tips-heading">Search tips</p>
+          <p>
+            <code>"quoted text"</code> finds that exact phrase, in order.
+          </p>
+          <p>
+            <code>-word</code> excludes results containing that word.
+          </p>
+          <p className="empty-tips-examples-label">Try an example</p>
+          <div className="example-chips">
+            <button type="button" onClick={() => handleExample('"oil price"')}>
+              "oil price"
+            </button>
+            <button type="button" onClick={() => handleExample("trade -japan")}>
+              trade -japan
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExample('"interest rate" -government')}
+            >
+              "interest rate" -government
+            </button>
+          </div>
+        </div>
+      ) : (
         <p className="meta">
           {meta.total} results in {meta.time_ms}ms
           {meta.corrected_query && ` (showing results for "${meta.corrected_query}")`}

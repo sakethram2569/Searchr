@@ -65,8 +65,8 @@ h1 {
   color: transparent;
 }
 
-.search-form { display: flex; justify-content: center; gap: 8px; position: relative; }
-.input-wrap { position: relative; flex: 1; max-width: 420px; }
+.search-form { display: flex; justify-content: center; align-items: center; gap: 8px; position: relative; }
+.input-wrap { position: relative; flex: 1; max-width: 460px; }
 
 .input-wrap input {
   width: 100%;
@@ -81,7 +81,9 @@ h1 {
 }
 .input-wrap input:focus { border-color: var(--accent); }
 
-.search-form button {
+.search-form button { cursor: pointer; }
+
+.search-form > button[type="submit"] {
   padding: 12px 24px;
   font-size: 1rem;
   font-weight: 600;
@@ -89,10 +91,9 @@ h1 {
   border: none;
   background: var(--accent);
   color: var(--accent-contrast);
-  cursor: pointer;
   transition: filter 0.15s ease;
 }
-.search-form button:hover { filter: brightness(1.1); }
+.search-form > button[type="submit"]:hover { filter: brightness(1.1); }
 
 .suggestions {
   position: absolute;
@@ -111,6 +112,96 @@ h1 {
 }
 .suggestions li { padding: 8px 10px; border-radius: 6px; cursor: pointer; color: var(--muted); }
 .suggestions li:hover { background: var(--hover-bg); color: var(--text); }
+
+.syntax-help { position: relative; display: flex; align-items: center; }
+
+.syntax-help-btn {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.syntax-help-btn:hover,
+.syntax-help-btn[aria-expanded="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.syntax-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 260px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 24px var(--shadow);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text);
+  text-align: left;
+  z-index: 20;
+}
+.syntax-popover p { margin: 0 0 10px; }
+.syntax-popover p:last-child { margin-bottom: 0; }
+
+.empty-tips {
+  max-width: 480px;
+  margin: 28px auto 0;
+  padding: 28px 32px;
+  border-radius: 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  text-align: center;
+}
+.empty-tips-heading {
+  margin: 0 0 14px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--title);
+}
+.empty-tips p { margin: 0 0 10px; color: var(--muted); font-size: 0.9rem; line-height: 1.6; }
+.empty-tips-examples-label {
+  margin: 18px 0 10px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.example-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.example-chips button {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.example-chips button:hover { border-color: var(--accent); color: var(--accent); }
+
+.syntax-popover code,
+.empty-tips code {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 0.85em;
+  color: var(--accent);
+}
 
 .meta { text-align: center; color: var(--muted); font-size: 0.875rem; margin: 20px 0 32px; }
 
@@ -167,3 +258,9 @@ mark { background: var(--mark-bg); color: var(--mark-text); padding: 0 2px; bord
 .modal h2 { margin: 0 32px 16px 0; color: var(--title); font-size: 1.3rem; }
 .modal-content { white-space: pre-line; line-height: 1.7; color: var(--text); font-size: 0.95rem; }
 .modal-loading { color: var(--muted); }
+
+@media (max-width: 540px) {
+  .search-form { flex-wrap: wrap; }
+  .input-wrap { flex: 1 1 100%; max-width: 100%; }
+  .empty-tips { margin-left: 12px; margin-right: 12px; }
+}
