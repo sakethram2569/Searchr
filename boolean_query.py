@@ -82,3 +82,26 @@ def phrase_run_length(query_terms, doc_id, postings_by_term):
                 k += 1
             best = max(best, run)
     return best
+
+def filter_by_exact_phrases(candidate_ids, phrase_term_lists, postings_by_term):
+    """
+    Hard filter: keep only candidate doc_ids where EVERY phrase in
+    phrase_term_lists appears as an exact, literal consecutive run
+    (multiple phrases are ANDed together -- a doc must satisfy all of
+    them, not just one).
+
+    If NO candidate satisfies every phrase, the original candidate_ids
+    are returned completely unchanged -- this is the fallback: a
+    quoted phrase with zero exact matches should never cause /search
+    to show zero results.
+    """
+    if not phrase_term_lists:
+        return candidate_ids
+    matched = {
+        doc_id for doc_id in candidate_ids
+        if all(
+            phrase_run_length(phrase, doc_id, postings_by_term) == len(phrase)
+            for phrase in phrase_term_lists
+        )
+    }
+    return matched if matched else candidate_ids

@@ -17,10 +17,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from tokenizer import tokenize
 from bm25 import precompute_idf, score_document
-from boolean_query import union, multi_and, phrase_run_length
+from boolean_query import union, multi_and, phrase_run_length, subtract, filter_by_exact_phrases
 from trie import Trie
 from spellcheck import spellcheck
 from snippet import generate_snippet
+from query_parser import parse_query
 
 load_dotenv()
 
@@ -97,8 +98,36 @@ def search(q: str, page: int = 1, size: int = 10):
     avg_dl = state["avg_dl"]
     idf = state["idf"]
 
-    raw_tokens = tokenize(q)
-    query_terms, corrected = resolve_query(raw_tokens)
+    parsed = parse_query(q)
+
+    free_terms, free_corrected = resolve_query(tokenize(parsed["free_text"]))
+
+    phrase_term_lists = []
+    phrase_corrected = False
+    for phrase in parsed["phrases"]:
+        terms, changed = resolve_query(tokenize(phrase))
+        if terms:  # a phrase that tokenizes to nothing (e.g. all stopwords) contributes nothing
+            phrase_term_lists.append(terms)
+        phrase_corrected = phrase_corrected or changed
+
+    excluded_terms = []
+    excluded_corrected = False
+    for word in parsed["excluded"]:
+        terms, changed = resolve_query(tokenize(word))
+        excluded_terms.extend(terms)
+        excluded_corrected = excluded_corrected or changed
+
+    # Every word from every phrase counts as a required word too --
+    # a doc can't satisfy an exact phrase without containing each word
+    # individually first. Deduplicated, order preserved.
+    seen = set()
+    query_terms = []
+    for term in [t for phrase in phrase_term_lists for t in phrase] + free_terms:
+        if term not in seen:
+            seen.add(term)
+            query_terms.append(term)
+
+    corrected = free_corrected or phrase_corrected or excluded_corrected
 
     postings_lists = [inverted_index[t] for t in query_terms if t in inverted_index]
 
@@ -115,6 +144,13 @@ def search(q: str, page: int = 1, size: int = 10):
             for p in postings_lists[1:]:
                 or_result = union(or_result, p)
             candidates = or_result
+    
+    # Exclusion is a real, unconditional filter -- unlike the phrase
+    # fallback below, if excluding a term empties the result set, that's
+    # correct: the user explicitly asked to remove it.
+    for term in excluded_terms:
+        if term in inverted_index:
+            candidates = subtract(candidates, inverted_index[term])
 
     postings_by_term = {
         t: {p["doc_id"]: p for p in inverted_index.get(t, [])} for t in query_terms
@@ -136,6 +172,10 @@ def search(q: str, page: int = 1, size: int = 10):
         }
     else:
         scores = bm25_scores
+
+    if phrase_term_lists:
+        phrase_matched_ids = filter_by_exact_phrases(candidate_ids, phrase_term_lists, postings_by_term)
+        scores = {doc_id: scores[doc_id] for doc_id in phrase_matched_ids}
 
     ranked = heapq.nlargest(len(scores), scores.items(), key=lambda x: x[1])
     total = len(ranked)
