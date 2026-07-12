@@ -20,7 +20,7 @@ from bm25 import precompute_idf, score_document
 from boolean_query import union, multi_and, phrase_run_length, subtract, filter_by_exact_phrases
 from trie import Trie
 from spellcheck import spellcheck
-from snippet import generate_snippet
+from snippet import generate_snippet, highlight_full_content
 from query_parser import parse_query
 
 load_dotenv()
@@ -144,7 +144,7 @@ def search(q: str, page: int = 1, size: int = 10):
             for p in postings_lists[1:]:
                 or_result = union(or_result, p)
             candidates = or_result
-    
+
     # Exclusion is a real, unconditional filter -- unlike the phrase
     # fallback below, if excluding a term empties the result set, that's
     # correct: the user explicitly asked to remove it.
@@ -220,7 +220,7 @@ def autocomplete(prefix: str, limit: int = 8):
 
 
 @app.get("/document/{doc_id}")
-def get_document(doc_id: int):
+def get_document(doc_id: int, q: str = ""):
     conn = state["db_pool"].getconn()
     try:
         cur = conn.cursor()
@@ -231,4 +231,25 @@ def get_document(doc_id: int):
         state["db_pool"].putconn(conn)
     if not row:
         return {"error": "not found"}
-    return {"title": row[0], "content": row[1]}
+
+    title, content = row
+
+    if q:
+        # Reuse the same query parser /search uses, so quotes and -exclusion
+        # in q are handled identically -- excluded words are deliberately
+        # left out of highlighting (highlighting a word the user asked to
+        # exclude would be confusing, not helpful).
+        inverted_index = state["inverted_index"]
+        parsed = parse_query(q)
+        raw_words = " ".join([parsed["free_text"]] + parsed["phrases"])
+        query_terms, _ = resolve_query(tokenize(raw_words))
+
+        term_positions = {}
+        for t in set(query_terms):
+            posting = next((p for p in inverted_index.get(t, []) if p["doc_id"] == doc_id), None)
+            if posting:
+                term_positions[t] = posting["positions"]
+
+        content = highlight_full_content(content, term_positions)
+
+    return {"title": title, "content": content}

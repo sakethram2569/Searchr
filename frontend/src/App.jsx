@@ -62,8 +62,8 @@ function App() {
 
   const openDocument = async (id) => {
     setDocLoading(true);
-    setSelectedDoc({ id, title: "", content: "" }); // open modal immediately, show loading
-    const res = await api.get(`/document/${id}`);
+    setSelectedDoc({ id, title: "", content: "" });
+    const res = await api.get(`/document/${id}`, { params: { q: activeQuery } });
     setSelectedDoc({ id, title: res.data.title, content: res.data.content });
     setDocLoading(false);
   };
@@ -77,19 +77,6 @@ function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
-
-  const highlightContent = (text) => {
-    const highlightSource = meta?.corrected_query || activeQuery;
-    if (!highlightSource) return text;
-    const words = [...new Set(highlightSource.trim().split(/\s+/))].filter(Boolean);
-    if (words.length === 0) return text;
-    const escaped = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-    const pattern = new RegExp(`\\b(${escaped.join("|")})\\b`, "gi");
-    const wordSet = new Set(words.map((w) => w.toLowerCase()));
-    return text.split(pattern).map((part, i) =>
-      wordSet.has(part.toLowerCase()) ? <mark key={i}>{part}</mark> : part
-    );
-  };
 
   const totalPages = meta ? Math.max(1, Math.ceil(meta.total / PAGE_SIZE)) : 1;
 
@@ -158,7 +145,7 @@ function App() {
             ) : (
               <>
                 <h2>{selectedDoc.title}</h2>
-                <p className="modal-content">{highlightContent(selectedDoc.content)}</p>
+                <p className="modal-content" dangerouslySetInnerHTML={{ __html: selectedDoc.content }} />
               </>
             )}
           </div>

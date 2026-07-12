@@ -70,3 +70,29 @@ def generate_snippet(content: str, term_positions: dict[str, list[int]],
     prefix = "..." if win_start > 0 else ""
     suffix = "..." if win_end < len(content) else ""
     return prefix + "".join(snippet_chars) + suffix
+
+
+def highlight_full_content(content: str, term_positions: dict[str, list[int]]) -> str:
+    """
+    Same position-based <mark> insertion as generate_snippet, but applied to
+    the ENTIRE document with no window truncation -- used for the full
+    document-detail view rather than a search-result preview snippet.
+    """
+    char_offsets = build_char_offsets(content)
+
+    occurrences = []
+    for term, positions in term_positions.items():
+        for pos in positions:
+            if pos < len(char_offsets):
+                start, end = char_offsets[pos]
+                occurrences.append((start, end))
+
+    if not occurrences:
+        return content
+
+    content_chars = list(content)
+    for start, end in sorted(occurrences, key=lambda x: -x[0]):
+        content_chars[start:end] = list(
+            "<mark>" + "".join(content_chars[start:end]) + "</mark>"
+        )
+    return "".join(content_chars)
